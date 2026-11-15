@@ -8,6 +8,12 @@
       "type": "planet",
       "diameterKm": 4879,
       "distanceFromSunKm": 57909050,
+      "scientificData": {
+        "meanDiameterKm": 4879.4, "massKg": 3.301e23, "surfaceGravityMps2": 3.70,
+        "meanDistanceFromSunKm": 57909000, "orbitalPeriodDays": 87.969, "solarDayHours": 4222.6,
+        "meanTemperatureC": 167, "temperatureContext": "exosphere", "naturalSatelliteCount": 0,
+        "source": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/mercuryfact.html"
+      },
       "distanceFromEarthKm": 91700000,
       "visualAngleDegrees": -25.35,
       "visual": {
@@ -45,6 +51,12 @@
       "type": "planet",
       "diameterKm": 12104,
       "distanceFromSunKm": 108208000,
+      "scientificData": {
+        "meanDiameterKm": 12103.6, "massKg": 4.8673e24, "surfaceGravityMps2": 8.87,
+        "meanDistanceFromSunKm": 108210000, "orbitalPeriodDays": 224.701, "solarDayHours": 2802,
+        "meanTemperatureC": 464, "temperatureContext": "surface", "naturalSatelliteCount": 0,
+        "source": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/venusfact.html"
+      },
       "distanceFromEarthKm": 41400000,
       "visualAngleDegrees": -24.32,
       "visual": {
@@ -81,6 +93,12 @@
       "type": "planet",
       "diameterKm": 12742,
       "distanceFromSunKm": 149597870,
+      "scientificData": {
+        "meanDiameterKm": 12742, "massKg": 5.9722e24, "surfaceGravityMps2": 9.82,
+        "meanDistanceFromSunKm": 149598000, "orbitalPeriodDays": 365.256, "solarDayHours": 24,
+        "meanTemperatureC": 15, "temperatureContext": "surface", "naturalSatelliteCount": 1,
+        "source": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/earthfact.html"
+      },
       "distanceFromEarthKm": 0,
       "visualAngleDegrees": 2.2,
       "visual": {
@@ -122,6 +140,12 @@
       "type": "planet",
       "diameterKm": 6779,
       "distanceFromSunKm": 227939200,
+      "scientificData": {
+        "meanDiameterKm": 6779, "surfaceGravityMps2": 3.73, "meanDistanceFromSunKm": 227956000,
+        "orbitalPeriodDays": 686.980, "solarDayHours": 24.6597, "meanTemperatureC": -59,
+        "temperatureContext": "surface", "naturalSatelliteCount": 2,
+        "source": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/marsfact.html"
+      },
       "distanceFromEarthKm": 225000000,
       "visualAngleDegrees": 10.58,
       "visual": {
@@ -161,6 +185,12 @@
       "type": "planet",
       "diameterKm": 139820,
       "distanceFromSunKm": 778570000,
+      "scientificData": {
+        "meanDiameterKm": 139822, "surfaceGravityMps2": 25.92, "meanDistanceFromSunKm": 778479000,
+        "orbitalPeriodDays": 4332.589, "solarDayHours": 9.9259, "meanTemperatureC": -108,
+        "temperatureContext": "1 bar", "naturalSatelliteCount": 95,
+        "source": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/jupiterfact.html"
+      },
       "distanceFromEarthKm": 628730000,
       "visualAngleDegrees": -4.18,
       "visual": {
@@ -203,6 +233,12 @@
       "type": "planet",
       "diameterKm": 116460,
       "distanceFromSunKm": 1433529000,
+      "scientificData": {
+        "meanDiameterKm": 116464, "surfaceGravityMps2": 11.19, "meanDistanceFromSunKm": 1432041000,
+        "orbitalPeriodDays": 10755.699, "solarDayHours": 10.656, "meanTemperatureC": -139,
+        "temperatureContext": "1 bar", "naturalSatelliteCount": 274,
+        "source": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/saturnfact.html"
+      },
       "distanceFromEarthKm": 1275000000,
       "visualAngleDegrees": 4.73,
       "visual": {
@@ -240,6 +276,12 @@
       "type": "planet",
       "diameterKm": 50724,
       "distanceFromSunKm": 2872463000,
+      "scientificData": {
+        "meanDiameterKm": 50724, "surfaceGravityMps2": 9.01, "meanDistanceFromSunKm": 2867043000,
+        "orbitalPeriodDays": 30685.400, "solarDayHours": 17.24, "meanTemperatureC": -197,
+        "temperatureContext": "1 bar", "naturalSatelliteCount": 28,
+        "source": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/uranusfact.html"
+      },
       "distanceFromEarthKm": 2723950000,
       "visualAngleDegrees": -3.18,
       "visual": {
@@ -275,6 +317,12 @@
       "type": "planet",
       "diameterKm": 49244,
       "distanceFromSunKm": 4495060000,
+      "scientificData": {
+        "meanDiameterKm": 49244, "surfaceGravityMps2": 11.27, "meanDistanceFromSunKm": 4514953000,
+        "orbitalPeriodDays": 60189.018, "solarDayHours": 16.11, "meanTemperatureC": -201,
+        "temperatureContext": "1 bar", "naturalSatelliteCount": 16,
+        "source": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/neptunefact.html"
+      },
       "distanceFromEarthKm": 4345000000,
       "visualAngleDegrees": 1.34,
       "visual": {

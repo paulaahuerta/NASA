@@ -7,11 +7,15 @@ import moonsUrl from '../data/moons.json?url&no-inline';
 import planetsUrl from '../data/planets.json?url&no-inline';
 import sunUrl from '../data/sun.json?url&no-inline';
 import spacecraftUrl from '../data/spacecraft.json?url&no-inline';
+import moonsManifest from '../data/moons.json';
+import planetsManifest from '../data/planets.json';
+import sunManifest from '../data/sun.json';
 import CelestialBody from '../objects/CelestialBody.js';
 import SpaceEquipment from '../objects/SpaceEquipment.js';
 import Spacecraft from '../objects/Spacecraft.js';
 import createStarfield from '../utils/createStarfield.js';
 import createActionButton from '../utils/createActionButton.js';
+import { getAmbientMusic } from '../utils/AmbientMusic.js';
 import { getSavedLanguage, localizedAssetCaption, localizedField, translate } from '../utils/localization.js';
 
 const SURFACE_MAP_WIDTH = 4800;
@@ -40,6 +44,22 @@ export default class ExplorationScene extends Phaser.Scene {
   }
 
   preload() {
+    const { width, height } = this.scale.gameSize;
+    const loadingText = this.add.text(width / 2, height / 2, '', {
+      fontFamily: gameConfig.visual.monoFontFamily,
+      fontSize: '18px',
+      color: gameConfig.palette.text,
+    }).setOrigin(0.5);
+    const loadingLabel = getSavedLanguage() === 'en' ? 'Loading' : 'Cargando';
+    const updateLoadingText = (progress) => {
+      loadingText.setText(`${loadingLabel} ${Math.round(progress * 100)}%`);
+    };
+    updateLoadingText(0);
+    this.load.on(Phaser.Loader.Events.PROGRESS, updateLoadingText);
+    this.load.once(Phaser.Loader.Events.COMPLETE, () => {
+      this.load.off(Phaser.Loader.Events.PROGRESS, updateLoadingText);
+      loadingText.destroy();
+    });
     this.load.on(Phaser.Loader.Events.FILE_LOAD_ERROR, (file) => {
       console.error(`[ExplorationScene] No se pudo cargar ${file.key}: ${file.src}`);
     });
@@ -51,15 +71,20 @@ export default class ExplorationScene extends Phaser.Scene {
     this.load.json('equipmentData', equipmentUrl);
     this.load.json('sunData', sunUrl);
 
+    const spriteIds = new Set(
+      [...planetsManifest.objects, ...moonsManifest.objects, sunManifest]
+        .map((body) => body.visual?.imageId)
+        .filter(Boolean),
+    );
     assetsManifest.images.forEach((image) => {
-      // Verificamos que 'image' y 'image.path' existan y sean texto
-      if (image && image.id && typeof image.path === 'string') {
-        const cleanPath = image.path.startsWith('/') ? image.path.slice(1) : image.path;
-        const finalPath = `${import.meta.env.BASE_URL}${cleanPath}`;
-        
-        this.load.image(image.id, finalPath);
-      }
+      if (spriteIds.has(image.id) && !image.mapArtifacts) this.queueImage(image);
     });
+  }
+
+  queueImage(image) {
+    if (!image?.id || typeof image.path !== 'string' || this.textures.exists(image.id)) return;
+    const cleanPath = image.path.startsWith('/') ? image.path.slice(1) : image.path;
+    this.load.image(image.id, `${import.meta.env.BASE_URL}${cleanPath}`);
   }
 
   create() {
@@ -108,6 +133,7 @@ export default class ExplorationScene extends Phaser.Scene {
     this.celestialBodies = new Map();
     this.equipmentMarkers = [];
     this.discoveredIds = new Set();
+    this.completionPending = false;
     this.activeTarget = null;
     this.infoPopupTarget = null;
     this.infoPopupOpen = false;
@@ -127,6 +153,8 @@ export default class ExplorationScene extends Phaser.Scene {
       ...this.celestialBodies.values(),
       ...this.equipmentMarkers,
     ];
+    this.orderedGuideTargets = this.createGuideOrder();
+    this.discoveryTotal = new Set(this.targets.map((target) => target.id)).size;
 
     console.info('[ExplorationScene] Nave creada', {
       id: this.spacecraftData.id,
@@ -137,6 +165,7 @@ export default class ExplorationScene extends Phaser.Scene {
     });
 
     this.configureControls();
+    this.ambientMusic = getAmbientMusic(this.game);
     this.createHUD();
     this.configureCameras();
     this.layoutHUD(this.scale.gameSize);
@@ -145,6 +174,8 @@ export default class ExplorationScene extends Phaser.Scene {
       this.scale.off(Phaser.Scale.Events.RESIZE, this.handleResize, this);
       this.input.off('pointermove', this.handleTimelinePointerMove, this);
       this.input.off('pointerup', this.handleTimelinePointerUp, this);
+      this.input.off('pointermove', this.handleMusicVolumeMove, this);
+      this.input.off('pointerup', this.handleMusicVolumeUp, this);
     });
 
     this.cameras.main.fadeIn(gameConfig.animation.fadeMs, 0, 0, 0);
@@ -274,6 +305,12 @@ export default class ExplorationScene extends Phaser.Scene {
       arrowLeft: keyCodes.LEFT,
       arrowRight: keyCodes.RIGHT,
     });
+    this.movementInput = {
+      up: { isDown: false },
+      down: { isDown: false },
+      left: { isDown: false },
+      right: { isDown: false },
+    };
     this.handleInteractionKey = (event) => {
       if (event.repeat) return;
       if (event.key === 'Escape') {
@@ -327,7 +364,7 @@ export default class ExplorationScene extends Phaser.Scene {
       strokeThickness: 4,
     });
     this.flashlightStatus = this.add.text(
-      23,
+      47,
       62,
       translate(this.language, 'exploration.flashlightOff'),
       {
@@ -338,6 +375,16 @@ export default class ExplorationScene extends Phaser.Scene {
         strokeThickness: 4,
       },
     );
+    this.flashlightKey = this.add.container(29, 68);
+    const flashlightKeyBackground = this.add.graphics();
+    flashlightKeyBackground.fillStyle(0x233d55, 0.95);
+    flashlightKeyBackground.fillRoundedRect(-9, -9, 18, 18, 4);
+    flashlightKeyBackground.lineStyle(1, Number.parseInt(gameConfig.palette.electric.slice(1), 16), 0.65);
+    flashlightKeyBackground.strokeRoundedRect(-9, -9, 18, 18, 4);
+    const flashlightKeyLabel = this.add.text(0, 0, 'F', {
+      fontFamily: gameConfig.visual.monoFontFamily, fontSize: '11px', fontStyle: 'bold', color: gameConfig.palette.text,
+    }).setOrigin(0.5);
+    this.flashlightKey.add([flashlightKeyBackground, flashlightKeyLabel]);
     this.hudSubtitle = this.add.text(23, 43, translate(this.language, 'exploration.subtitle'), {
       fontFamily: gameConfig.visual.bodyFontFamily,
       fontSize: `${gameConfig.visual.hudBodyFontSize}px`,
@@ -345,6 +392,145 @@ export default class ExplorationScene extends Phaser.Scene {
       stroke: gameConfig.palette.background,
       strokeThickness: 4,
     });
+    this.discoveryCard = this.add.container(16, 82);
+    this.discoveryCardBackground = this.add.graphics();
+    this.discoveryTitle = this.add.text(12, 11, translate(this.language, 'exploration.discoveryTitle'), {
+      fontFamily: gameConfig.visual.bodyFontFamily,
+      fontSize: '13px',
+      fontStyle: 'bold',
+      color: gameConfig.palette.text,
+    });
+    this.discoveryCounter = this.add.text(204, 12, '', {
+      fontFamily: gameConfig.visual.monoFontFamily,
+      fontSize: '12px',
+      color: gameConfig.palette.text,
+    }).setOrigin(1, 0);
+    this.discoveryTrack = this.add.rectangle(12, 37, 192, 4, 0x304151, 0.9).setOrigin(0, 0);
+    this.discoveryProgress = this.add.rectangle(12, 37, 0, 4,
+      Number.parseInt(gameConfig.palette.electric.slice(1), 16), 0.9).setOrigin(0, 0);
+    this.discoveryDestinationTitle = this.add.text(12, 53,
+      translate(this.language, 'exploration.nextDestination'), {
+        fontFamily: gameConfig.visual.monoFontFamily,
+        fontSize: '10px',
+        color: gameConfig.palette.muted,
+      });
+    this.discoveryDestination = this.add.text(12, 70, '', {
+      fontFamily: gameConfig.visual.bodyFontFamily,
+      fontSize: '12px',
+      color: gameConfig.palette.text,
+      wordWrap: { width: 166 },
+      maxLines: 2,
+    });
+    this.nextDestinationButton = this.add.container(193, 77).setSize(28, 28);
+    const nextBackground = this.add.rectangle(0, 0, 28, 28, 0x233d55, 0.75);
+    const nextArrow = this.add.text(0, -1, '›', {
+      fontFamily: gameConfig.visual.bodyFontFamily,
+      fontSize: '24px',
+      color: gameConfig.palette.text,
+    }).setOrigin(0.5);
+    this.nextDestinationButton.add([nextBackground, nextArrow]);
+    this.nextDestinationButton.setInteractive(new Phaser.Geom.Rectangle(-14, -14, 28, 28),
+      Phaser.Geom.Rectangle.Contains);
+    this.nextDestinationButton.input.cursor = 'pointer';
+    this.nextDestinationButton.on('pointerdown', () => this.selectNextGuideTarget());
+    this.destinationTooltip = this.add.text(222, 66, translate(this.language, 'exploration.selectNextDestination'), {
+      fontFamily: gameConfig.visual.monoFontFamily,
+      fontSize: '10px',
+      color: gameConfig.palette.text,
+      backgroundColor: gameConfig.palette.buttonFill,
+      padding: { left: 6, right: 6, top: 4, bottom: 4 },
+    }).setVisible(false);
+    this.nextDestinationButton.on('pointerover', () => this.destinationTooltip.setVisible(true));
+    this.nextDestinationButton.on('pointerout', () => this.destinationTooltip.setVisible(false));
+    this.discoveryCard.add([this.discoveryCardBackground, this.discoveryTitle, this.discoveryCounter,
+      this.discoveryTrack, this.discoveryProgress, this.discoveryDestinationTitle, this.discoveryDestination,
+      this.nextDestinationButton, this.destinationTooltip]);
+    this.completionNotice = this.add.text(0, 0, '', {
+      fontFamily: gameConfig.visual.bodyFontFamily,
+      fontSize: '14px',
+      color: gameConfig.palette.text,
+      backgroundColor: gameConfig.palette.buttonFill,
+      padding: { left: 12, right: 12, top: 8, bottom: 8 },
+      align: 'center',
+      wordWrap: { width: 280 },
+    }).setOrigin(0.5).setVisible(false);
+    this.guideArrow = this.add.graphics().setVisible(false);
+    this.guideArrow.lineStyle(1.5, Number.parseInt(gameConfig.palette.muted.slice(1), 16), 0.9);
+    this.guideArrow.beginPath();
+    this.guideArrow.moveTo(-6, -5);
+    this.guideArrow.lineTo(5, 0);
+    this.guideArrow.lineTo(-6, 5);
+    this.guideArrow.strokePath();
+    this.guideLabel = this.add.text(0, 0, '', {
+      fontFamily: gameConfig.visual.monoFontFamily,
+      fontSize: '11px',
+      color: gameConfig.palette.muted,
+      backgroundColor: gameConfig.palette.background,
+      padding: { left: 4, right: 4, top: 2, bottom: 2 },
+    }).setOrigin(0.5).setVisible(false);
+    this.guideTarget = null;
+    this.manualGuideTargetId = null;
+    this.nextGuideSelection = 0;
+    this.musicButton = this.add.container(76, 207).setSize(120, 30);
+    const musicBackground = this.add.rectangle(0, 0, 120, 30,
+      Number.parseInt(gameConfig.palette.buttonFill.slice(1), 16), 0.85)
+      .setStrokeStyle(1, Number.parseInt(gameConfig.palette.muted.slice(1), 16), 0.5);
+    this.musicIcon = this.add.text(-47, -1, '♫', {
+      fontFamily: gameConfig.visual.bodyFontFamily,
+      fontSize: '18px',
+      color: gameConfig.palette.text,
+    }).setOrigin(0.5);
+    this.musicMutedMark = this.add.graphics();
+    this.musicMutedMark.lineStyle(2, Number.parseInt(gameConfig.palette.text.slice(1), 16), 0.9);
+    this.musicMutedMark.lineBetween(-55, 8, -39, -8);
+    this.musicLabel = this.add.text(-31, 0, translate(this.language, 'exploration.musicLabel'), {
+      fontFamily: gameConfig.visual.monoFontFamily, fontSize: '11px', color: gameConfig.palette.text,
+    }).setOrigin(0, 0.5);
+    this.musicState = this.add.text(50, 0, '', {
+      fontFamily: gameConfig.visual.monoFontFamily, fontSize: '10px', color: gameConfig.palette.muted,
+    }).setOrigin(1, 0.5);
+    this.musicButton.add([musicBackground, this.musicIcon, this.musicMutedMark, this.musicLabel, this.musicState]);
+    this.musicTooltip = this.add.text(16, 236, '', {
+      fontFamily: gameConfig.visual.monoFontFamily,
+      fontSize: '11px',
+      color: gameConfig.palette.text,
+      backgroundColor: gameConfig.palette.buttonFill,
+      padding: { left: 6, right: 6, top: 4, bottom: 4 },
+    }).setOrigin(0, 0.5).setVisible(false);
+    this.musicButton.setInteractive(new Phaser.Geom.Rectangle(-60, -15, 120, 30),
+      Phaser.Geom.Rectangle.Contains);
+    this.musicButton.input.cursor = 'pointer';
+    this.musicButton.on('pointerdown', () => {
+      this.ambientMusic.toggle();
+      this.updateMusicButton();
+    });
+    this.musicButton.on('pointerover', () => this.musicTooltip.setVisible(true));
+    this.musicButton.on('pointerout', () => this.musicTooltip.setVisible(false));
+    this.musicVolumeControl = this.add.container(151, 207).setSize(84, 30);
+    this.musicVolumeGraphics = this.add.graphics();
+    this.musicVolumeValue = this.add.text(88, 0, '', {
+      fontFamily: gameConfig.visual.monoFontFamily, fontSize: '11px', color: gameConfig.palette.text,
+    }).setOrigin(0, 0.5);
+    this.musicVolumeControl.add([this.musicVolumeGraphics, this.musicVolumeValue]);
+    this.musicVolumeControl.setInteractive(new Phaser.Geom.Rectangle(42, 0, 84, 30),
+      Phaser.Geom.Rectangle.Contains);
+    this.musicVolumeControl.input.cursor = 'pointer';
+    this.musicVolumeControl.on('pointerdown', (pointer) => {
+      this.musicVolumeDragging = true;
+      this.setMusicVolumeFromPointer(pointer);
+    });
+    this.musicVolumeControl.on('pointerover', () => {
+      this.musicTooltip.setText(translate(this.language, 'exploration.musicVolume')).setVisible(true);
+    });
+    this.musicVolumeControl.on('pointerout', () => this.musicTooltip.setVisible(false));
+    this.handleMusicVolumeMove = (pointer) => {
+      if (this.musicVolumeDragging) this.setMusicVolumeFromPointer(pointer);
+    };
+    this.handleMusicVolumeUp = () => { this.musicVolumeDragging = false; };
+    this.input.on('pointermove', this.handleMusicVolumeMove, this);
+    this.input.on('pointerup', this.handleMusicVolumeUp, this);
+    this.updateMusicButton();
+    this.updateDiscoveryCounter();
     this.movementHint = this.add.text(22, 0, translate(this.language, 'exploration.movementHint'), {
       fontFamily: gameConfig.visual.monoFontFamily,
       fontSize: `${gameConfig.visual.hudBodyFontSize}px`,
@@ -379,10 +565,7 @@ export default class ExplorationScene extends Phaser.Scene {
     }).setOrigin(1, 0).setVisible(false);
 
     this.proximityPanel = this.add.container(0, 0).setVisible(false);
-    this.proximityBackground = this.add
-      .rectangle(0, 0, gameConfig.visual.proximityPanelWidth, gameConfig.visual.proximityPanelHeight,
-        Number.parseInt(gameConfig.palette.buttonFill.slice(1), 16), 0.88)
-      .setStrokeStyle(1, Number.parseInt(gameConfig.palette.electric.slice(1), 16), 0.58);
+    this.proximityBackground = this.add.graphics();
     this.proximityName = this.add.text(
       0,
       -18,
@@ -398,16 +581,26 @@ export default class ExplorationScene extends Phaser.Scene {
         wordWrap: { width: gameConfig.visual.proximityPanelWidth - 28 },
       },
     ).setOrigin(0, 0.5);
-    this.proximityStatus = this.add.text(0, 20, '', {
-      fontFamily: gameConfig.visual.monoFontFamily,
-      fontSize: `${gameConfig.visual.hudBodyFontSize}px`,
-      color: gameConfig.palette.electric,
-      stroke: gameConfig.palette.background,
-      strokeThickness: 3,
-      lineSpacing: 3,
-      wordWrap: { width: gameConfig.visual.proximityPanelWidth - 28 },
-    }).setOrigin(0, 0.5);
-    this.proximityPanel.add([this.proximityBackground, this.proximityName, this.proximityStatus]);
+    const createKeyHint = (key) => {
+      const container = this.add.container(0, 16).setVisible(false);
+      const background = this.add.graphics();
+      background.fillStyle(0x233d55, 1);
+      background.fillRoundedRect(0, -10, 21, 20, 4);
+      background.lineStyle(1, Number.parseInt(gameConfig.palette.electric.slice(1), 16), 0.75);
+      background.strokeRoundedRect(0, -10, 21, 20, 4);
+      const keyLabel = this.add.text(10.5, 0, key, {
+        fontFamily: gameConfig.visual.monoFontFamily, fontSize: '12px', fontStyle: 'bold', color: gameConfig.palette.text,
+      }).setOrigin(0.5);
+      const action = this.add.text(28, 0, '', {
+        fontFamily: gameConfig.visual.bodyFontFamily, fontSize: '12px', color: gameConfig.palette.text,
+      }).setOrigin(0, 0.5);
+      container.add([background, keyLabel, action]);
+      return { container, action };
+    };
+    this.surfaceKeyHint = createKeyHint('Q');
+    this.interactKeyHint = createKeyHint('E');
+    this.proximityPanel.add([this.proximityBackground, this.proximityName,
+      this.surfaceKeyHint.container, this.interactKeyHint.container]);
 
     this.finishButton = createActionButton(this, {
       width: 250,
@@ -426,6 +619,14 @@ export default class ExplorationScene extends Phaser.Scene {
       this.hudTitle,
       this.hudSubtitle,
       this.flashlightStatus,
+      this.flashlightKey,
+      this.discoveryCard,
+      this.completionNotice,
+      this.guideArrow,
+      this.guideLabel,
+      this.musicButton,
+      this.musicVolumeControl,
+      this.musicTooltip,
       this.movementHint,
       this.zoomIndicator,
       this.targetNameHUD,
@@ -619,7 +820,7 @@ export default class ExplorationScene extends Phaser.Scene {
 
   layoutTimelineControl(gameSize) {
     const y = gameSize.height - 27;
-    const trackLeft = Math.min(190, Math.max(92, gameSize.width * 0.16));
+    const trackLeft = Math.min(190, Math.max(148, gameSize.width * 0.16));
     const trackRight = Math.max(trackLeft + 100, gameSize.width - 72);
     this.timelineTrackLeft = trackLeft;
     this.timelineTrackWidth = trackRight - trackLeft;
@@ -810,12 +1011,22 @@ export default class ExplorationScene extends Phaser.Scene {
   layoutHUD(gameSize) {
     this.hudTitle.setPosition(22, 18);
     this.hudSubtitle.setPosition(23, 43);
-    this.flashlightStatus.setPosition(23, 62);
-    this.zoomIndicator.setPosition(gameSize.width - 22, 18);
+    this.flashlightStatus.setPosition(47, 62);
+    this.discoveryCard.setPosition(16, 82);
+    this.discoveryCardBackground.clear();
+    this.discoveryCardBackground.fillStyle(Number.parseInt(gameConfig.palette.buttonFill.slice(1), 16), 0.9);
+    this.discoveryCardBackground.fillRoundedRect(0, 0, 216, 106, 8);
+    this.discoveryCardBackground.lineStyle(1, Number.parseInt(gameConfig.palette.electric.slice(1), 16), 0.4);
+    this.discoveryCardBackground.strokeRoundedRect(0, 0, 216, 106, 8);
+    this.destinationTooltip.setPosition(gameSize.width >= this.destinationTooltip.width + 246 ? 222 : 0,
+      gameSize.width >= this.destinationTooltip.width + 246 ? 66 : 146);
+    this.completionNotice.setPosition(gameSize.width / 2, 260);
+    this.completionNotice.setWordWrapWidth(Math.max(100, Math.min(360, gameSize.width - 48)), true);
+    this.zoomIndicator.setPosition(gameSize.width - 22, 62);
     this.targetNameHUD.setPosition(gameSize.width / 2, 22);
-    this.movementHint.setPosition(22, gameSize.height - 65);
+    this.movementHint.setPosition(22, gameSize.height - (gameSize.width < 600 && this.proximityPanel.visible ? 145 : 65));
 
-    const finishWidth = Math.min(250, Math.max(130, gameSize.width * 0.48));
+    const finishWidth = Math.min(250, Math.max(130, Math.min(gameSize.width * 0.48, gameSize.width - 188)));
     this.finishButton.setSize(finishWidth, 42);
     this.finishButton.container.input.hitArea.setTo(0, 0, finishWidth, 42);
     this.finishButton.label.setFontSize(finishWidth < 200 ? 9 : 12);
@@ -823,88 +1034,102 @@ export default class ExplorationScene extends Phaser.Scene {
     this.hudTitle.setFontSize(gameSize.width < 450 ? 13 : gameConfig.visual.hudTitleFontSize);
 
     const panelWidth = Math.min(gameConfig.visual.proximityPanelWidth, gameSize.width - 32);
-    this.proximityBackground.setSize(panelWidth, gameConfig.visual.proximityPanelHeight);
+    this.drawProximityBackground(panelWidth);
     this.proximityName.setPosition(-panelWidth / 2 + 14, -18);
-    this.proximityStatus.setPosition(-panelWidth / 2 + 14, 20);
     this.proximityName.setWordWrapWidth(panelWidth - 28, true);
-    this.proximityStatus.setWordWrapWidth(panelWidth - 28, true);
+    this.surfaceKeyHint.container.setPosition(-panelWidth / 2 + 14, 16);
+    this.interactKeyHint.container.setPosition(-panelWidth / 2 + 196, 16);
     this.proximityPanel.setPosition(
       gameSize.width / 2,
       gameSize.height - gameConfig.visual.proximityPanelHeight / 2 - 62,
     );
 
     this.layoutTimelineControl(gameSize);
-    this.surfaceObjectiveCounter.setPosition(gameSize.width - 18, 50);
+    this.surfaceObjectiveCounter.setPosition(gameSize.width - 18, 85);
     this.hudCamera?.setViewport(0, 0, gameSize.width, gameSize.height);
 
     if (this.activeTarget) this.positionProximityPanel();
-    if (this.infoPopupOpen) this.positionInfoPopup();
+    if (this.infoPopupOpen) {
+      this.positionInfoPopup();
+      this.setCompactPopupHud();
+    }
   }
 
   handleResize(gameSize) {
     this.layoutHUD(gameSize);
   }
 
-  update(_time, delta) {
+  update(time, delta) {
     if (!this.spacecraft || !this.keys) return;
+    const input = this.movementInput;
+    input.up.isDown = this.keys.up.isDown || this.keys.arrowUp.isDown;
+    input.down.isDown = this.keys.down.isDown || this.keys.arrowDown.isDown;
+    input.left.isDown = this.keys.left.isDown || this.keys.arrowLeft.isDown;
+    input.right.isDown = this.keys.right.isDown || this.keys.arrowRight.isDown;
+
+    const movementDelta = this.game.loop.rawDelta;
+    const cameraDelta = Math.min(movementDelta, 100);
+    const cameraLerp = 1 - Math.exp(-cameraDelta / 110);
+    this.worldCamera.lerp.set(cameraLerp, cameraLerp);
+
     if (!this.surfaceEntryTween?.isPlaying()) {
-      this.spacecraft.update({
-        up: { isDown: this.keys.up.isDown || this.keys.arrowUp.isDown },
-        down: { isDown: this.keys.down.isDown || this.keys.arrowDown.isDown },
-        left: { isDown: this.keys.left.isDown || this.keys.arrowLeft.isDown },
-        right: { isDown: this.keys.right.isDown || this.keys.arrowRight.isDown },
-      }, delta, this.surfaceModeBodyId ? this.surfaceWorldBounds : this.worldBounds);
+      this.spacecraft.update(
+        input,
+        movementDelta,
+        this.surfaceModeBodyId ? this.surfaceWorldBounds : this.worldBounds,
+      );
     }
     this.updateProximity();
     this.updateSurfaceView(delta);
     this.updateLighting();
+    this.updateExplorationGuide(time);
 
     if (this.infoPopupOpen) this.positionInfoPopup();
   }
 
   updateProximity() {
     const { radius, hysteresis } = gameConfig.world.proximity;
-    const candidates = this.targets
-      .filter((target) => {
-        if (!this.surfaceModeBodyId) return true;
-        return target.bodyId === this.surfaceModeBodyId;
-      })
-      .filter((target) => this.isVisibleOnTimeline(target))
-      .map((target) => ({ target, distance: this.getTargetDistance(target) - target.proximityRadius }))
-      .filter(({ distance }) => distance <= radius)
-      .sort((first, second) => first.distance - second.distance);
+    let nearestTarget = null;
+    let nearestDistance = Infinity;
+    let activeDistance = Infinity;
 
-    let nearest = candidates[0] ?? null;
-    if (this.activeTarget) {
-      const active = candidates.find(({ target }) => target.id === this.activeTarget.id);
-      if (active && (!nearest || nearest.target.id === this.activeTarget.id
-        || nearest.distance + hysteresis >= active.distance)) {
-        nearest = active;
+    for (const target of this.targets) {
+      if ((this.surfaceModeBodyId && target.bodyId !== this.surfaceModeBodyId)
+        || !this.isVisibleOnTimeline(target)) continue;
+
+      const distance = this.getTargetDistance(target) - target.proximityRadius;
+      if (distance > radius) continue;
+      if (target.id === this.activeTarget?.id) activeDistance = distance;
+      if (distance < nearestDistance) {
+        nearestTarget = target;
+        nearestDistance = distance;
       }
     }
 
-    if (!nearest) {
+    if (this.activeTarget && activeDistance < Infinity
+      && (!nearestTarget || nearestTarget.id === this.activeTarget.id
+        || nearestDistance + hysteresis >= activeDistance)) {
+      nearestTarget = this.activeTarget;
+    }
+
+    if (!nearestTarget) {
       if (this.activeTarget) this.activeTarget.setHighlighted(false);
       this.activeTarget = null;
       this.targetNameHUD.setVisible(false);
       this.updateSurfacePrompt();
-      this.positionProximityPanel();
       return;
     }
 
-    if (nearest.target.id !== this.activeTarget?.id) {
+    if (nearestTarget.id !== this.activeTarget?.id) {
       if (this.activeTarget) this.activeTarget.setHighlighted(false);
-      this.activeTarget = nearest.target;
+      this.activeTarget = nearestTarget;
       this.activeTarget.setHighlighted(true);
-      this.discoveredIds.add(this.activeTarget.id);
       this.proximityName.setText(this.activeTarget.name);
       this.targetNameHUD.setText(this.activeTarget.name);
-      this.proximityPanel.setVisible(true);
     }
 
-    this.targetNameHUD.setVisible(this.isTargetInteractable(this.activeTarget));
+    this.targetNameHUD.setVisible(this.scale.gameSize.width >= 600 && this.isTargetInteractable(this.activeTarget));
     this.updateSurfacePrompt();
-    this.positionProximityPanel();
   }
 
   getAvailableMissionBodies() {
@@ -928,50 +1153,77 @@ export default class ExplorationScene extends Phaser.Scene {
       if (targetBody) return targetBody;
     }
 
-    return availableBodies
-      .map((body) => {
-        const centerDistance = this.getTargetDistance(body);
-        const surfaceDistance = Math.max(0, centerDistance - body.radius);
-        return { body, surfaceDistance };
-      })
-      .filter(({ body, surfaceDistance }) => {
-        const tolerance = Math.max(body.radius * 1.5, 120);
-        return surfaceDistance <= tolerance;
-      })
-      .sort((first, second) => first.surfaceDistance - second.surfaceDistance)[0]?.body ?? null;
+    let nearestBody = null;
+    let nearestDistance = Infinity;
+    for (const body of availableBodies) {
+      const centerDistance = this.getTargetDistance(body);
+      const surfaceDistance = Math.max(0, centerDistance - body.radius);
+      const tolerance = Math.max(body.radius * 1.5, 120);
+      if (surfaceDistance <= tolerance && surfaceDistance < nearestDistance) {
+        nearestBody = body;
+        nearestDistance = surfaceDistance;
+      }
+    }
+
+    return nearestBody;
   }
 
   updateSurfacePrompt() {
+    if (this.infoPopupOpen) {
+      this.proximityPanel.setVisible(false);
+      return;
+    }
     if (this.surfaceModeBodyId) {
       const interactableMission = this.activeTarget
         && this.activeTarget.bodyId === this.surfaceModeBodyId
         && this.isTargetInteractable(this.activeTarget);
-      this.proximityName.setText(interactableMission ? this.activeTarget.name : '');
-      this.proximityStatus.setText(interactableMission
-        ? translate(this.language, 'exploration.surfaceMode.missionHint')
-        : translate(this.language, 'exploration.surfaceMode.exitHint'));
-      this.proximityPanel.setVisible(true);
+      this.setProximityPrompt(interactableMission ? this.activeTarget.name : '',
+        'exploration.actionLeaveSurface', Boolean(interactableMission));
       return;
     }
 
     const nearbyBody = this.getNearbyMissionBody();
     if (nearbyBody) {
-      this.proximityName.setText(nearbyBody.name);
-      this.proximityStatus.setText(
-        translate(this.language, 'exploration.surfaceMode.enterHint'),
-      );
-      this.proximityPanel.setVisible(true);
+      const interactable = this.activeTarget && this.isTargetInteractable(this.activeTarget);
+      this.setProximityPrompt(interactable ? this.activeTarget.name : nearbyBody.name,
+        'exploration.actionEnterSurface', Boolean(interactable));
       return;
     }
 
     if (this.activeTarget && this.isTargetInteractable(this.activeTarget)) {
-      this.proximityName.setText(this.activeTarget.name);
-      this.proximityStatus.setText(translate(this.language, 'exploration.interactHint'));
-      this.proximityPanel.setVisible(true);
+      this.setProximityPrompt(this.activeTarget.name, null, true);
       return;
     }
 
-    this.proximityPanel.setVisible(false);
+    if (this.proximityPanel.visible) {
+      this.tweens.killTweensOf(this.proximityPanel);
+      this.proximityPanel.setVisible(false);
+      this.movementHint.setY(this.scale.gameSize.height - 65);
+    }
+  }
+
+  setProximityPrompt(name, surfaceAction, canInteract) {
+    this.proximityName.setText(name);
+    this.surfaceKeyHint.container.setVisible(Boolean(surfaceAction));
+    if (surfaceAction) this.surfaceKeyHint.action.setText(translate(this.language, surfaceAction));
+    this.interactKeyHint.container.setVisible(canInteract);
+    if (canInteract) this.interactKeyHint.action.setText(translate(this.language, 'exploration.actionViewInfo'));
+    const panelWidth = Math.min(gameConfig.visual.proximityPanelWidth, this.scale.gameSize.width - 32);
+    this.interactKeyHint.container.x = -panelWidth / 2 + (surfaceAction ? 196 : 14);
+    if (!this.proximityPanel.visible) {
+      this.proximityPanel.setVisible(true).setAlpha(0);
+      this.tweens.add({ targets: this.proximityPanel, alpha: 1, duration: 180 });
+    }
+    if (this.scale.gameSize.width < 600) this.movementHint.setY(this.scale.gameSize.height - 145);
+  }
+
+  drawProximityBackground(panelWidth) {
+    const height = gameConfig.visual.proximityPanelHeight;
+    this.proximityBackground.clear();
+    this.proximityBackground.fillStyle(Number.parseInt(gameConfig.palette.buttonFill.slice(1), 16), 0.94);
+    this.proximityBackground.fillRoundedRect(-panelWidth / 2, -height / 2, panelWidth, height, 8);
+    this.proximityBackground.lineStyle(1, Number.parseInt(gameConfig.palette.electric.slice(1), 16), 0.65);
+    this.proximityBackground.strokeRoundedRect(-panelWidth / 2, -height / 2, panelWidth, height, 8);
   }
 
   toggleSurfaceMode() {
@@ -1295,11 +1547,11 @@ export default class ExplorationScene extends Phaser.Scene {
   positionProximityPanel() {
     const { width, height } = this.scale.gameSize;
     const panelWidth = Math.min(gameConfig.visual.proximityPanelWidth, width - 32);
-    this.proximityBackground.setSize(panelWidth, gameConfig.visual.proximityPanelHeight);
+    this.drawProximityBackground(panelWidth);
     this.proximityName.setWordWrapWidth(panelWidth - 28, true);
-    this.proximityStatus.setWordWrapWidth(panelWidth - 28, true);
     this.proximityName.setPosition(-panelWidth / 2 + 14, -18);
-    this.proximityStatus.setPosition(-panelWidth / 2 + 14, 20);
+    this.surfaceKeyHint.container.setPosition(-panelWidth / 2 + 14, 16);
+    this.interactKeyHint.container.setPosition(-panelWidth / 2 + (this.surfaceKeyHint.container.visible ? 196 : 14), 16);
     this.proximityPanel.setPosition(
       width / 2,
       height - gameConfig.visual.proximityPanelHeight / 2 - 62,
@@ -1318,8 +1570,13 @@ export default class ExplorationScene extends Phaser.Scene {
   }
 
   getTargetDistance(target) {
-    const position = this.getTargetPosition(target);
-    return Math.hypot(this.spacecraft.x - position.x, this.spacecraft.y - position.y);
+    const targetX = target.container
+      ? target.container.x + (target.localX ?? 0)
+      : target.x;
+    const targetY = target.container
+      ? target.container.y + (target.localY ?? 0)
+      : target.y;
+    return Math.hypot(this.spacecraft.x - targetX, this.spacecraft.y - targetY);
   }
 
   isTargetInteractable(target) {
@@ -1624,6 +1881,15 @@ export default class ExplorationScene extends Phaser.Scene {
   }
 
   openInfoPopup(target) {
+    const alreadyDiscovered = this.discoveredIds.has(target.id);
+    this.discoveredIds.add(target.id);
+    this.nextGuideSelection = 0;
+    let completed = false;
+    if (!alreadyDiscovered) {
+      if (this.manualGuideTargetId === target.id) this.manualGuideTargetId = null;
+      this.updateDiscoveryCounter();
+      completed = this.discoveryTotal > 0 && this.discoveredIds.size === this.discoveryTotal;
+    }
     if (target.data.equipmentType) {
       this.rememberLegacy(target.id);
       this.updateSurfaceObjectiveCounter();
@@ -1643,7 +1909,190 @@ export default class ExplorationScene extends Phaser.Scene {
     this.infoPopupIcon.setFillStyle(Number.parseInt(iconColor.slice(1), 16), 1);
     this.infoPopupOpen = true;
     this.infoPopup.setVisible(true);
+    this.proximityPanel.setVisible(false);
+    this.setCompactPopupHud();
     this.positionInfoPopup();
+    if (completed) this.showExplorationCompletion();
+    this.loadInfoGallery(target);
+  }
+
+  updateDiscoveryCounter() {
+    this.discoveryCounter.setText(`${this.discoveredIds.size} / ${this.discoveryTotal}`);
+    this.discoveryProgress.setSize(192 * (this.discoveryTotal ? this.discoveredIds.size / this.discoveryTotal : 0), 4);
+  }
+
+  updateMusicButton() {
+    const enabled = this.ambientMusic.enabled;
+    this.musicIcon.setAlpha(enabled ? 1 : 0.4);
+    this.musicMutedMark.setVisible(!enabled);
+    this.musicState.setText(translate(this.language, enabled ? 'exploration.musicOn' : 'exploration.musicOff'));
+    this.musicTooltip.setText(translate(this.language, enabled ? 'exploration.musicMute' : 'exploration.musicEnable'));
+    const position = 4 + this.ambientMusic.volume * 76;
+    this.musicVolumeGraphics.clear();
+    this.musicVolumeGraphics.lineStyle(3, 0x304151, 1);
+    this.musicVolumeGraphics.lineBetween(4, 0, 80, 0);
+    this.musicVolumeGraphics.lineStyle(3, Number.parseInt(gameConfig.palette.electric.slice(1), 16), 0.9);
+    this.musicVolumeGraphics.lineBetween(4, 0, position, 0);
+    this.musicVolumeGraphics.fillStyle(Number.parseInt(gameConfig.palette.text.slice(1), 16), 1);
+    this.musicVolumeGraphics.fillCircle(position, 0, 5);
+    this.musicVolumeValue.setText(`${Math.round(this.ambientMusic.volume * 100)}%`);
+  }
+
+  setMusicVolumeFromPointer(pointer) {
+    const volume = Phaser.Math.Clamp((pointer.x - this.musicVolumeControl.x - 4) / 76, 0, 1);
+    this.ambientMusic.setVolume(volume);
+    this.updateMusicButton();
+  }
+
+  showExplorationCompletion() {
+    const message = translate(this.language, 'exploration.explorationComplete')
+      .replace('{found}', this.discoveredIds.size)
+      .replace('{total}', this.discoveryTotal);
+    this.completionNotice.setText(message);
+    const { width, height } = this.scale.gameSize;
+    const halfHeight = this.completionNotice.height / 2;
+    let noticeY = 260;
+    if (this.infoPopupOpen) {
+      const popupHalfWidth = gameConfig.visual.infoPopupWidth * this.infoPopup.scaleX / 2;
+      const popupHalfHeight = this.infoPopupHeight * this.infoPopup.scaleY / 2;
+      const overlapsX = Math.abs(width / 2 - this.infoPopup.x)
+        < this.completionNotice.width / 2 + popupHalfWidth;
+      const overlapsY = Math.abs(noticeY - this.infoPopup.y) < halfHeight + popupHalfHeight;
+      if (overlapsX && overlapsY) {
+        const below = this.infoPopup.y + popupHalfHeight + halfHeight + 12;
+        const above = this.infoPopup.y - popupHalfHeight - halfHeight - 12;
+        if (below <= height - 150) noticeY = below;
+        else if (above >= 235) noticeY = above;
+        else {
+          this.completionPending = true;
+          return;
+        }
+      }
+    }
+    this.completionPending = false;
+    this.completionNotice.setPosition(width / 2, noticeY).setVisible(true).setAlpha(1);
+    this.hud.bringToTop(this.completionNotice);
+    this.tweens.add({ targets: this.completionNotice, alpha: 0, delay: 5000, duration: 800,
+      onComplete: () => this.completionNotice.setVisible(false) });
+  }
+
+  isGuideTargetAvailable(target, includeDiscovered = false) {
+    return (includeDiscovered || !this.discoveredIds.has(target.id)) && this.isVisibleOnTimeline(target)
+      && (!this.surfaceModeBodyId || target.bodyId === this.surfaceModeBodyId);
+  }
+
+  createGuideOrder() {
+    const children = new Map();
+    const deepSpace = [];
+    for (const target of this.targets) {
+      if (target.data.missionCategory === 'deep-space') {
+        deepSpace.push(target);
+        continue;
+      }
+      const parentId = target.data.parentId ?? target.bodyId;
+      if (!parentId) continue;
+      if (!children.has(parentId)) children.set(parentId, []);
+      children.get(parentId).push(target);
+    }
+    for (const group of children.values()) {
+      group.sort((first, second) => (first.data.distanceFromParentKm ?? Infinity)
+        - (second.data.distanceFromParentKm ?? Infinity));
+    }
+    const result = [];
+    const visited = new Set();
+    const append = (target) => {
+      if (!target || visited.has(target.id)) return;
+      visited.add(target.id);
+      result.push(target);
+      for (const child of children.get(target.id) ?? []) append(child);
+    };
+    append(this.celestialBodies.get('sun'));
+    const planets = this.planetsData.objects.slice()
+      .sort((first, second) => first.distanceFromSunKm - second.distanceFromSunKm);
+    for (const planet of planets) append(this.celestialBodies.get(planet.id));
+    for (const target of this.targets) {
+      if (target.data.missionCategory !== 'deep-space') append(target);
+    }
+    deepSpace.sort((first, second) => first.id.localeCompare(second.id));
+    for (const target of deepSpace) append(target);
+    return result;
+  }
+
+  selectNextGuideTarget() {
+    const available = this.orderedGuideTargets.filter((target) => this.isGuideTargetAvailable(target, true));
+    if (available.length === 0) return;
+    const currentIndex = available.findIndex((target) => target.id === this.guideTarget?.id);
+    this.manualGuideTargetId = available[(currentIndex + 1) % available.length].id;
+    this.nextGuideSelection = 0;
+    this.updateExplorationGuide(this.time.now);
+  }
+
+  updateExplorationGuide(time) {
+    if (time >= this.nextGuideSelection) {
+      this.nextGuideSelection = time + 250;
+      const selected = this.orderedGuideTargets.find((target) => target.id === this.manualGuideTargetId
+        && this.isGuideTargetAvailable(target, true))
+        ?? this.orderedGuideTargets.find((target) => this.isGuideTargetAvailable(target));
+      this.guideTarget = selected;
+      if (!selected || selected.id !== this.manualGuideTargetId) this.manualGuideTargetId = null;
+      this.discoveryDestinationTitle.setText(translate(this.language, this.manualGuideTargetId
+        ? 'exploration.selectedDestination' : 'exploration.nextDestination'));
+      this.discoveryDestination.setText(selected?.name ?? translate(this.language, 'exploration.noDestination'));
+      if (selected) this.guideLabel.setText(`${selected.name} · ${Math.round(this.getTargetDistance(selected))} UN`);
+    }
+
+    const target = this.guideTarget;
+    if (!target || this.infoPopupOpen) {
+      this.guideArrow.setVisible(false);
+      this.guideLabel.setVisible(false);
+      return;
+    }
+    const camera = this.worldCamera;
+    const { width, height } = this.scale.gameSize;
+    const position = this.getTargetPosition(target);
+    const targetX = camera.x + (position.x - camera.worldView.x) * camera.zoom;
+    const targetY = camera.y + (position.y - camera.worldView.y) * camera.zoom;
+    const onScreen = targetX >= 0 && targetX <= width && targetY >= 0 && targetY <= height;
+    if (onScreen) {
+      this.guideArrow.setVisible(false);
+      this.guideLabel.setVisible(false);
+      return;
+    }
+
+    const directionX = targetX - width / 2;
+    const directionY = targetY - height / 2;
+    const limitX = (width / 2 - 30) / Math.max(Math.abs(directionX), 0.001);
+    const limitY = Math.max(20, height / 2 - 90) / Math.max(Math.abs(directionY), 0.001);
+    const distance = Math.min(limitX, limitY);
+    const arrowX = width / 2 + directionX * distance;
+    const arrowY = height / 2 + directionY * distance;
+    const angle = Math.atan2(directionY, directionX);
+    this.guideArrow.setPosition(arrowX, arrowY).setRotation(angle).setVisible(true);
+    const labelHalfWidth = Math.min(this.guideLabel.width / 2, width / 2 - 8);
+    this.guideLabel.setPosition(
+      Phaser.Math.Clamp(arrowX, labelHalfWidth + 8, width - labelHalfWidth - 8),
+      Phaser.Math.Clamp(arrowY + (arrowY < height / 2 ? 19 : -19), 92, height - 92),
+    ).setVisible(true);
+  }
+
+  loadInfoGallery(target) {
+    const galleryIds = new Set((target.data.gallery ?? []).map((item) => item.assetId));
+    const missingImages = this.assets.images.filter((image) => (
+      galleryIds.has(image.id) && !this.textures.exists(image.id)
+    ));
+    if (missingImages.length === 0) return;
+
+    missingImages.forEach((image) => this.queueImage(image));
+    this.load.once(Phaser.Loader.Events.COMPLETE, () => {
+      if (!this.scene.isActive() || !this.infoPopupOpen || this.infoPopupTarget !== target) return;
+      const scrollOffset = this.infoPopupScrollOffset;
+      this.populateInfoGallery(target);
+      this.setInfoPopupTab(this.infoPopupTab);
+      this.infoPopupScrollOffset = Math.min(scrollOffset, this.infoPopupScrollMax);
+      this.infoPopupContent.setY(-this.infoPopupScrollOffset);
+      this.positionInfoPopup();
+    });
+    if (!this.load.isLoading()) this.load.start();
   }
 
   populateInfoGallery(target) {
@@ -1787,6 +2236,21 @@ export default class ExplorationScene extends Phaser.Scene {
     this.infoPopupOpen = false;
     this.infoPopupTarget = null;
     this.infoPopup.setVisible(false);
+    this.setCompactPopupHud();
+    this.updateSurfacePrompt();
+    if (this.completionPending) this.showExplorationCompletion();
+  }
+
+  setCompactPopupHud() {
+    const show = !this.infoPopupOpen || this.scale.gameSize.width >= 600;
+    this.discoveryCard.setVisible(show);
+    this.musicButton.setVisible(show);
+    this.musicVolumeControl.setVisible(show);
+    this.movementHint.setVisible(show);
+    this.flashlightKey.setVisible(show);
+    this.flashlightStatus.setVisible(show);
+    this.zoomIndicator.setVisible(show);
+    if (!show) this.musicTooltip.setVisible(false);
   }
 
   positionInfoPopup() {

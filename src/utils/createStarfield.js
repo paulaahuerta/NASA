@@ -13,23 +13,61 @@ export default function createStarfield(scene, config, options = {}) {
   const objects = [];
 
   layers.forEach((layer, layerIndex) => {
-    const graphics = scene.add.graphics();
+    if (!options.worldSize) {
+      const graphics = scene.add.graphics();
+      const starCount = Math.round(layer.count * densityScale);
+      for (let index = 0; index < starCount; index += 1) {
+        const radius = Phaser.Math.FloatBetween(layer.minRadius, layer.maxRadius);
+        const alpha = Phaser.Math.FloatBetween(layer.minAlpha, layer.maxAlpha);
+        graphics.fillStyle(colorValue(config.palette.star), alpha);
+        graphics.fillCircle(
+          Phaser.Math.Between(0, expandedWidth),
+          Phaser.Math.Between(0, expandedHeight),
+          radius,
+        );
+      }
+      graphics
+        .setPosition(originX, originY)
+        .setDepth(-100 + layerIndex)
+        .setScrollFactor(layer.scrollFactor);
+      objects.push(graphics);
+      return;
+    }
+    const chunks = new Map();
+    const chunkSize = 512;
     const starCount = Math.round(layer.count * densityScale);
     for (let index = 0; index < starCount; index += 1) {
       const radius = Phaser.Math.FloatBetween(layer.minRadius, layer.maxRadius);
       const alpha = Phaser.Math.FloatBetween(layer.minAlpha, layer.maxAlpha);
+      const x = Phaser.Math.Between(0, expandedWidth);
+      const y = Phaser.Math.Between(0, expandedHeight);
+      const chunkX = Math.floor(x / chunkSize);
+      const chunkY = Math.floor(y / chunkSize);
+      const key = `${chunkX},${chunkY}`;
+      let graphics = chunks.get(key);
+      if (!graphics) {
+        const left = originX + chunkX * chunkSize;
+        const top = originY + chunkY * chunkSize;
+        graphics = scene.add.graphics()
+          .setPosition(left, top)
+          .setDepth(-100 + layerIndex)
+          .setScrollFactor(layer.scrollFactor);
+        const willRender = graphics.willRender;
+        graphics.willRender = function (camera) {
+          if (!willRender.call(this, camera)) return false;
+          const viewLeft = camera.worldView.x - camera.scrollX * (1 - layer.scrollFactor);
+          const viewTop = camera.worldView.y - camera.scrollY * (1 - layer.scrollFactor);
+          return left + chunkSize + 2 >= viewLeft
+            && left - 2 <= viewLeft + camera.worldView.width
+            && top + chunkSize + 2 >= viewTop
+            && top - 2 <= viewTop + camera.worldView.height;
+        };
+        chunks.set(key, graphics);
+        objects.push(graphics);
+      }
       graphics.fillStyle(colorValue(config.palette.star), alpha);
-      graphics.fillCircle(
-        Phaser.Math.Between(0, expandedWidth),
-        Phaser.Math.Between(0, expandedHeight),
-        radius,
-      );
+      graphics.fillCircle(x - chunkX * chunkSize, y - chunkY * chunkSize, radius);
     }
-    graphics
-      .setPosition(originX, originY)
-      .setDepth(-100 + layerIndex)
-      .setScrollFactor(layer.scrollFactor);
-    objects.push(graphics);
   });
 
   const twinkleCount = Math.round(config.world.starfield.twinkleCount * densityScale);

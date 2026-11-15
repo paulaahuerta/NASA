@@ -76,7 +76,10 @@ export default class Spacecraft {
   }
 
   update(keys, delta, bounds) {
-    const seconds = delta / 1000;
+    const frameDelta = Math.min(delta, 100);
+    const seconds = frameDelta / 1000;
+    const previousVelocityX = this.velocity.x;
+    const previousVelocityY = this.velocity.y;
     let directionX = Number(keys.right.isDown) - Number(keys.left.isDown);
     let directionY = Number(keys.down.isDown) - Number(keys.up.isDown);
     const directionLength = Math.hypot(directionX, directionY);
@@ -87,26 +90,26 @@ export default class Spacecraft {
       this.velocity.x += directionX * this.movement.acceleration * seconds;
       this.velocity.y += directionY * this.movement.acceleration * seconds;
     } else {
-      this.velocity.scale(this.movement.drag ** (delta / (1000 / 60)));
+      this.velocity.scale(this.movement.drag ** (frameDelta / (1000 / 60)));
     }
 
-    const speed = this.velocity.length();
-    if (speed > this.movement.maxSpeed) {
-      this.velocity.scale(this.movement.maxSpeed / speed);
+    let currentSpeed = this.velocity.length();
+    if (currentSpeed > this.movement.maxSpeed) {
+      this.velocity.scale(this.movement.maxSpeed / currentSpeed);
+      currentSpeed = this.movement.maxSpeed;
     }
 
     this.container.x = Phaser.Math.Clamp(
-      this.container.x + this.velocity.x * seconds,
+      this.container.x + (previousVelocityX + this.velocity.x) * 0.5 * seconds,
       bounds.x + this.halfWidth,
       bounds.x + bounds.width - this.halfWidth,
     );
     this.container.y = Phaser.Math.Clamp(
-      this.container.y + this.velocity.y * seconds,
+      this.container.y + (previousVelocityY + this.velocity.y) * 0.5 * seconds,
       bounds.y + this.halfHeight,
       bounds.y + bounds.height - this.halfHeight,
     );
 
-    const currentSpeed = this.velocity.length();
     if (currentSpeed > 1) {
       const targetAngle = Math.atan2(this.velocity.y, this.velocity.x) + Math.PI / 2;
       this.container.rotation = Phaser.Math.Angle.RotateTo(

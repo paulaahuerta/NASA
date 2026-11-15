@@ -18,24 +18,24 @@
       "labelOffset": { "x": -82, "y": 20 },
       "imageId": null,
       "interactionId": "apollo-11-descent-stage-story",
-      "scientificDescription": "La etapa de descenso del módulo Eagle permitió el alunizaje de Neil Armstrong y Buzz Aldrin y sirvió de plataforma para las actividades lunares de Apollo 11.",
+      "scientificDescription": "La etapa de descenso del Eagle llevó a Neil Armstrong y Buzz Aldrin a Mare Tranquillitatis, donde alunizaron el 20 de julio de 1969; permanece en la Luna.",
       "objective": "Transportar a dos astronautas hasta la superficie lunar y proporcionar soporte para el alunizaje y las actividades extravehiculares.",
       "discoveries": "La misión devolvió muestras lunares y realizó experimentos de superficie durante la primera exploración humana del lugar.",
       "whyRemains": "La etapa de ascenso despegó para regresar a la órbita lunar; la etapa de descenso no tenía sistema para volver a despegar y se dejó en Tranquility Base.",
       "scientificLegacy": "El lugar y el hardware conservado documentan el primer alunizaje humano y las operaciones de una misión Apollo en la superficie.",
-      "description": "La etapa de descenso del módulo lunar Eagle que permanece en Tranquility Base.",
+      "description": "Etapa de descenso del Eagle, que llevó a Armstrong y Aldrin a Mare Tranquillitatis el 20 de julio de 1969.",
       "translations": { "en": {
         "name": "Apollo 11 Lunar Module descent stage",
         "mission": "Apollo 11",
         "destination": "Moon, Tranquility Base",
         "operationalStatus": "Not operational; the descent stage remained on the lunar surface after the crew departed.",
         "realLocation": { "description": "Tranquility Base" },
-        "scientificDescription": "The Eagle lunar module descent stage enabled Neil Armstrong and Buzz Aldrin to land and served as their platform for Apollo 11 surface activities.",
+        "scientificDescription": "The Eagle descent stage carried Neil Armstrong and Buzz Aldrin to Mare Tranquillitatis, where they landed on July 20, 1969; it remains on the Moon.",
         "objective": "Carry two astronauts to the lunar surface and support landing and extravehicular activities.",
         "discoveries": "The mission returned lunar samples and conducted surface experiments during the first human exploration at the site.",
         "whyRemains": "The ascent stage lifted off to return to lunar orbit. The descent stage had no system for taking off again, so it remained at Tranquility Base.",
         "scientificLegacy": "The site and hardware document the first human Moon landing and Apollo surface operations.",
-        "description": "The descent stage of the Eagle lunar module, left at Tranquility Base."
+        "description": "The Eagle descent stage carried Armstrong and Aldrin to Mare Tranquillitatis on July 20, 1969."
       } },
       "gallery": [{ "assetId": "equipment_apollo11" }, { "assetId": "equipment_apollo11_astronaut" }],
       "source": "https://www.nasa.gov/history/alsj/a11/a11.html"

@@ -5,8 +5,8 @@
     "y": 1100
   },
   "movement": {
-    "maxSpeed": 280,
-    "acceleration": 820,
+    "maxSpeed": 360,
+    "acceleration": 1300,
     "drag": 0.88,
     "rotationSpeed": 4.6,
     "flameMinScale": 0.16,

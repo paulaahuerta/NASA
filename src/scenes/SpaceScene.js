@@ -4,6 +4,7 @@ import assetsUrl from '../data/assets.json?url&no-inline';
 import storyUrl from '../data/intro-story.json?url&no-inline';
 import createActionButton from '../utils/createActionButton.js';
 import createStarfield from '../utils/createStarfield.js';
+import { getAmbientMusic } from '../utils/AmbientMusic.js';
 import { getSavedLanguage, saveLanguage, translate } from '../utils/localization.js';
 
 export default class SpaceScene extends Phaser.Scene {
@@ -74,7 +75,10 @@ export default class SpaceScene extends Phaser.Scene {
       text: translate(this.language, 'buttons.start'),
       palette,
       visual,
-      onPress: () => this.openStory(),
+      onPress: () => {
+        getAmbientMusic(this.game).start();
+        this.openStory();
+      },
     });
     this.createLanguageSelector();
 
