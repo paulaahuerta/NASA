@@ -70,6 +70,7 @@
     "actionViewInfo": "View details",
     "actionEnterSurface": "Enter surface",
     "actionLeaveSurface": "Leave surface",
+    "touch": { "controls": "Touch controls", "move": "Move spacecraft", "info": "Details", "light": "Light", "surface": "Surface", "return": "Return" },
     "explorationComplete": "Exploration complete! You discovered {found} of {total} objects.",
     "musicMute": "Mute music",
     "musicEnable": "Enable music",

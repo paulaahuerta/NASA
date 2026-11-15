@@ -16,6 +16,7 @@ import Spacecraft from '../objects/Spacecraft.js';
 import createStarfield from '../utils/createStarfield.js';
 import createActionButton from '../utils/createActionButton.js';
 import { getAmbientMusic } from '../utils/AmbientMusic.js';
+import TouchControls from '../utils/TouchControls.js';
 import { getSavedLanguage, localizedAssetCaption, localizedField, translate } from '../utils/localization.js';
 
 const SURFACE_MAP_WIDTH = 4800;
@@ -165,17 +166,24 @@ export default class ExplorationScene extends Phaser.Scene {
     });
 
     this.configureControls();
+    this.touchControls = window.matchMedia('(pointer: coarse)').matches ? new TouchControls(this) : null;
     this.ambientMusic = getAmbientMusic(this.game);
     this.createHUD();
     this.configureCameras();
     this.layoutHUD(this.scale.gameSize);
     this.scale.on(Phaser.Scale.Events.RESIZE, this.handleResize, this);
+    this.events.on(Phaser.Scenes.Events.PAUSE, this.hideTouchControls, this);
+    this.events.on(Phaser.Scenes.Events.RESUME, this.showTouchControls, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.scale.off(Phaser.Scale.Events.RESIZE, this.handleResize, this);
       this.input.off('pointermove', this.handleTimelinePointerMove, this);
       this.input.off('pointerup', this.handleTimelinePointerUp, this);
       this.input.off('pointermove', this.handleMusicVolumeMove, this);
       this.input.off('pointerup', this.handleMusicVolumeUp, this);
+      this.events.off(Phaser.Scenes.Events.PAUSE, this.hideTouchControls, this);
+      this.events.off(Phaser.Scenes.Events.RESUME, this.showTouchControls, this);
+      this.touchControls?.destroy();
+      this.touchControls = null;
     });
 
     this.cameras.main.fadeIn(gameConfig.animation.fadeMs, 0, 0, 0);
@@ -1033,12 +1041,12 @@ export default class ExplorationScene extends Phaser.Scene {
     this.finishButton.container.setPosition(gameSize.width - finishWidth / 2 - 16, 36);
     this.hudTitle.setFontSize(gameSize.width < 450 ? 13 : gameConfig.visual.hudTitleFontSize);
 
-    const panelWidth = Math.min(gameConfig.visual.proximityPanelWidth, gameSize.width - 32);
+    const panelWidth = this.getProximityPanelWidth();
     this.drawProximityBackground(panelWidth);
     this.proximityName.setPosition(-panelWidth / 2 + 14, -18);
     this.proximityName.setWordWrapWidth(panelWidth - 28, true);
     this.surfaceKeyHint.container.setPosition(-panelWidth / 2 + 14, 16);
-    this.interactKeyHint.container.setPosition(-panelWidth / 2 + 196, 16);
+    this.interactKeyHint.container.setPosition(-panelWidth / 2 + Math.min(196, panelWidth - 92), 16);
     this.proximityPanel.setPosition(
       gameSize.width / 2,
       gameSize.height - gameConfig.visual.proximityPanelHeight / 2 - 62,
@@ -1047,6 +1055,18 @@ export default class ExplorationScene extends Phaser.Scene {
     this.layoutTimelineControl(gameSize);
     this.surfaceObjectiveCounter.setPosition(gameSize.width - 18, 85);
     this.hudCamera?.setViewport(0, 0, gameSize.width, gameSize.height);
+
+    if (this.touchControls) {
+      this.hudTitle.setPosition(16, 10).setFontSize(13);
+      this.hudSubtitle.setPosition(16, 29);
+      this.flashlightKey.setPosition(24, 58);
+      this.flashlightStatus.setPosition(41, 52);
+      this.discoveryCard.setPosition(14, 73).setScale(0.7);
+      this.musicButton.setPosition(76, 166);
+      this.musicVolumeControl.setPosition(151, 166);
+      this.musicTooltip.setPosition(16, 193);
+      this.movementHint.setVisible(false);
+    }
 
     if (this.activeTarget) this.positionProximityPanel();
     if (this.infoPopupOpen) {
@@ -1066,6 +1086,9 @@ export default class ExplorationScene extends Phaser.Scene {
     input.down.isDown = this.keys.down.isDown || this.keys.arrowDown.isDown;
     input.left.isDown = this.keys.left.isDown || this.keys.arrowLeft.isDown;
     input.right.isDown = this.keys.right.isDown || this.keys.arrowRight.isDown;
+    input.touchX = this.touchControls?.x ?? 0;
+    input.touchY = this.touchControls?.y ?? 0;
+    this.touchControls?.updateState();
 
     const movementDelta = this.game.loop.rawDelta;
     const cameraDelta = Math.min(movementDelta, 100);
@@ -1128,7 +1151,8 @@ export default class ExplorationScene extends Phaser.Scene {
       this.targetNameHUD.setText(this.activeTarget.name);
     }
 
-    this.targetNameHUD.setVisible(this.scale.gameSize.width >= 600 && this.isTargetInteractable(this.activeTarget));
+    this.targetNameHUD.setVisible(!this.touchControls && this.scale.gameSize.width >= 600
+      && this.isTargetInteractable(this.activeTarget));
     this.updateSurfacePrompt();
   }
 
@@ -1208,8 +1232,9 @@ export default class ExplorationScene extends Phaser.Scene {
     if (surfaceAction) this.surfaceKeyHint.action.setText(translate(this.language, surfaceAction));
     this.interactKeyHint.container.setVisible(canInteract);
     if (canInteract) this.interactKeyHint.action.setText(translate(this.language, 'exploration.actionViewInfo'));
-    const panelWidth = Math.min(gameConfig.visual.proximityPanelWidth, this.scale.gameSize.width - 32);
-    this.interactKeyHint.container.x = -panelWidth / 2 + (surfaceAction ? 196 : 14);
+    const panelWidth = this.getProximityPanelWidth();
+    this.interactKeyHint.container.x = -panelWidth / 2 + (surfaceAction
+      ? Math.min(196, panelWidth - this.interactKeyHint.action.width - 42) : 14);
     if (!this.proximityPanel.visible) {
       this.proximityPanel.setVisible(true).setAlpha(0);
       this.tweens.add({ targets: this.proximityPanel, alpha: 1, duration: 180 });
@@ -1224,6 +1249,21 @@ export default class ExplorationScene extends Phaser.Scene {
     this.proximityBackground.fillRoundedRect(-panelWidth / 2, -height / 2, panelWidth, height, 8);
     this.proximityBackground.lineStyle(1, Number.parseInt(gameConfig.palette.electric.slice(1), 16), 0.65);
     this.proximityBackground.strokeRoundedRect(-panelWidth / 2, -height / 2, panelWidth, height, 8);
+  }
+
+  getProximityPanelWidth() {
+    const width = this.scale.gameSize.width;
+    return this.touchControls
+      ? Math.min(gameConfig.visual.proximityPanelWidth, Math.max(220, width - 332))
+      : Math.min(gameConfig.visual.proximityPanelWidth, width - 32);
+  }
+
+  hideTouchControls() {
+    this.touchControls?.setVisible(false);
+  }
+
+  showTouchControls() {
+    this.touchControls?.setVisible(!this.infoPopupOpen);
   }
 
   toggleSurfaceMode() {
@@ -1546,12 +1586,13 @@ export default class ExplorationScene extends Phaser.Scene {
 
   positionProximityPanel() {
     const { width, height } = this.scale.gameSize;
-    const panelWidth = Math.min(gameConfig.visual.proximityPanelWidth, width - 32);
+    const panelWidth = this.getProximityPanelWidth();
     this.drawProximityBackground(panelWidth);
     this.proximityName.setWordWrapWidth(panelWidth - 28, true);
     this.proximityName.setPosition(-panelWidth / 2 + 14, -18);
     this.surfaceKeyHint.container.setPosition(-panelWidth / 2 + 14, 16);
-    this.interactKeyHint.container.setPosition(-panelWidth / 2 + (this.surfaceKeyHint.container.visible ? 196 : 14), 16);
+    this.interactKeyHint.container.setPosition(-panelWidth / 2
+      + (this.surfaceKeyHint.container.visible ? Math.min(196, panelWidth - 92) : 14), 16);
     this.proximityPanel.setPosition(
       width / 2,
       height - gameConfig.visual.proximityPanelHeight / 2 - 62,
@@ -1909,6 +1950,7 @@ export default class ExplorationScene extends Phaser.Scene {
     this.infoPopupIcon.setFillStyle(Number.parseInt(iconColor.slice(1), 16), 1);
     this.infoPopupOpen = true;
     this.infoPopup.setVisible(true);
+    this.hideTouchControls();
     this.proximityPanel.setVisible(false);
     this.setCompactPopupHud();
     this.positionInfoPopup();
@@ -2065,13 +2107,17 @@ export default class ExplorationScene extends Phaser.Scene {
     const limitY = Math.max(20, height / 2 - 90) / Math.max(Math.abs(directionY), 0.001);
     const distance = Math.min(limitX, limitY);
     const arrowX = width / 2 + directionX * distance;
-    const arrowY = height / 2 + directionY * distance;
+    let arrowY = height / 2 + directionY * distance;
     const angle = Math.atan2(directionY, directionX);
+    const besideJoystick = Boolean(this.touchControls && arrowX < 110);
+    if (besideJoystick) arrowY = height - (height <= 340 ? 53 : 65);
     this.guideArrow.setPosition(arrowX, arrowY).setRotation(angle).setVisible(true);
     const labelHalfWidth = Math.min(this.guideLabel.width / 2, width / 2 - 8);
     this.guideLabel.setPosition(
-      Phaser.Math.Clamp(arrowX, labelHalfWidth + 8, width - labelHalfWidth - 8),
-      Phaser.Math.Clamp(arrowY + (arrowY < height / 2 ? 19 : -19), 92, height - 92),
+      Phaser.Math.Clamp(besideJoystick ? arrowX + labelHalfWidth + 16 : arrowX,
+        labelHalfWidth + 8, width - labelHalfWidth - 8),
+      besideJoystick ? arrowY
+        : Phaser.Math.Clamp(arrowY + (arrowY < height / 2 ? 19 : -19), 92, height - 92),
     ).setVisible(true);
   }
 
@@ -2236,6 +2282,7 @@ export default class ExplorationScene extends Phaser.Scene {
     this.infoPopupOpen = false;
     this.infoPopupTarget = null;
     this.infoPopup.setVisible(false);
+    this.showTouchControls();
     this.setCompactPopupHud();
     this.updateSurfacePrompt();
     if (this.completionPending) this.showExplorationCompletion();
@@ -2246,7 +2293,7 @@ export default class ExplorationScene extends Phaser.Scene {
     this.discoveryCard.setVisible(show);
     this.musicButton.setVisible(show);
     this.musicVolumeControl.setVisible(show);
-    this.movementHint.setVisible(show);
+    this.movementHint.setVisible(show && !this.touchControls);
     this.flashlightKey.setVisible(show);
     this.flashlightStatus.setVisible(show);
     this.zoomIndicator.setVisible(show);

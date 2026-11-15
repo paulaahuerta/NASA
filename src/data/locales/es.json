@@ -70,6 +70,7 @@
     "actionViewInfo": "Ver ficha",
     "actionEnterSurface": "Entrar a superficie",
     "actionLeaveSurface": "Salir de superficie",
+    "touch": { "controls": "Controles táctiles", "move": "Mover nave", "info": "Ficha", "light": "Linterna", "surface": "Superficie", "return": "Volver" },
     "explorationComplete": "¡Exploración completada! Has descubierto {found} de {total} objetos.",
     "musicMute": "Silenciar música",
     "musicEnable": "Activar música",

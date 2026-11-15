@@ -80,13 +80,15 @@ export default class Spacecraft {
     const seconds = frameDelta / 1000;
     const previousVelocityX = this.velocity.x;
     const previousVelocityY = this.velocity.y;
-    let directionX = Number(keys.right.isDown) - Number(keys.left.isDown);
-    let directionY = Number(keys.down.isDown) - Number(keys.up.isDown);
+    let directionX = Number(keys.right.isDown) - Number(keys.left.isDown) + (keys.touchX ?? 0);
+    let directionY = Number(keys.down.isDown) - Number(keys.up.isDown) + (keys.touchY ?? 0);
     const directionLength = Math.hypot(directionX, directionY);
 
-    if (directionLength > 0) {
+    if (directionLength > 1) {
       directionX /= directionLength;
       directionY /= directionLength;
+    }
+    if (directionLength > 0) {
       this.velocity.x += directionX * this.movement.acceleration * seconds;
       this.velocity.y += directionY * this.movement.acceleration * seconds;
     } else {

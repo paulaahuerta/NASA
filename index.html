@@ -2,12 +2,17 @@
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#080b12" />
     <title>Space Legacy: Forgotten Missions</title>
   </head>
   <body>
     <main id="game" aria-label="Space Legacy: Forgotten Missions"></main>
+    <section id="orientation-notice" role="status" aria-live="polite" hidden>
+      <div class="orientation-icon" aria-hidden="true"><span></span></div>
+      <h1 id="orientation-title">Gira tu dispositivo para explorar el universo</h1>
+      <p id="orientation-description">Este juego está diseñado para utilizarse en posición horizontal</p>
+    </section>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
