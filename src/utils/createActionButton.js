@@ -27,6 +27,7 @@ export default function createActionButton(scene, options) {
   
   container.setInteractive(createHitArea(width, height), Phaser.Geom.Rectangle.Contains);
   let enabled = true;
+  const pressedPointers = new Set();
 
   container.on('pointerover', () => {
     if (!enabled) return;
@@ -50,8 +51,14 @@ export default function createActionButton(scene, options) {
     });
     background.setFillStyle(colorValue(palette.buttonFill), 0.88);
   });
-  container.on('pointerdown', () => {
-    if (enabled) onPress();
+  container.on('pointerdown', (pointer) => {
+    if (enabled) pressedPointers.add(pointer.id);
+  });
+  container.on('pointerup', (pointer) => {
+    if (enabled && pressedPointers.delete(pointer.id)) onPress();
+  });
+  container.on('pointerupoutside', (pointer) => {
+    pressedPointers.delete(pointer.id);
   });
 
   return {
@@ -68,6 +75,7 @@ export default function createActionButton(scene, options) {
         container.setInteractive(createHitArea(container.width, container.height), Phaser.Geom.Rectangle.Contains);
         container.setAlpha(1);
       } else {
+        pressedPointers.clear();
         container.disableInteractive();
         container.setAlpha(0.58);
       }
